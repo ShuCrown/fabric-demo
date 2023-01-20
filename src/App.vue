@@ -268,6 +268,8 @@ export default {
           })
           this.canvas.renderAll()
         }
+       
+
         this.canvas.renderAll()
       }
     },
@@ -350,6 +352,8 @@ export default {
           hasControls: true,
           evented: false,
           objectCaching: false,
+          cornerColor: 'blue',
+          cornerStyle: 'circle',
         })
         this.canvas.remove(this.activeShape)
         this.canvas.add(polygon)
@@ -375,6 +379,7 @@ export default {
           objectCaching: false,
           transparentCorners: false,
           cornerColor: 'blue',
+          cornerStyle: 'circle',
         })
         this.activeShape = polygon
         this.canvas.add(polygon)
@@ -408,6 +413,15 @@ export default {
         hasControls: true,
         cornerStyle: 'circle',
       })
+      polygon.controls = points.reduce((acc, point, index)=> {
+				acc['p' + index] = new fabric.Control({
+					positionHandler: (dim, finalMatrix, fabricObject)=>{this.polygonPositionHandler(dim, finalMatrix, fabricObject,index)},
+					actionName: 'modifyPolygon',
+					pointIndex: index
+				});
+				return acc;
+			}, { });
+
       this.canvas.add(polygon)
 
       this.activeLine = null
@@ -416,6 +430,41 @@ export default {
       this.doDrawing = false
       this.drawType = null
     },
+    polygonPositionHandler(dim, finalMatrix, fabricObject,pointIndex) {
+      debugger
+      var x = (fabricObject.points[pointIndex].x - fabricObject.pathOffset.x),
+          y = (fabricObject.points[pointIndex].y - fabricObject.pathOffset.y);
+      return fabric.util.transformPoint(
+        { x: x, y: y },
+        fabric.util.multiplyTransformMatrices(
+          fabricObject.canvas.viewportTransform,
+          fabricObject.calcTransformMatrix()
+        )
+      );
+    },
+    anchorWrapper(anchorIndex, fn) {
+    return (eventData, transform, x, y)=> {
+      var fabricObject = transform.target,
+          absolutePoint = fabric.util.transformPoint({
+              x: (fabricObject.points[anchorIndex].x - fabricObject.pathOffset.x),
+              y: (fabricObject.points[anchorIndex].y - fabricObject.pathOffset.y),
+          }, fabricObject.calcTransformMatrix()),
+          actionPerformed = fn(eventData, transform, x, y),
+          newDim = fabricObject._setPositionDimensions({}),
+          polygonBaseSize = this.getObjectSizeWithStroke(fabricObject),
+          newX = (fabricObject.points[anchorIndex].x - fabricObject.pathOffset.x) / polygonBaseSize.x,
+  		    newY = (fabricObject.points[anchorIndex].y - fabricObject.pathOffset.y) / polygonBaseSize.y;
+      fabricObject.setPositionByOrigin(absolutePoint, newX + 0.5, newY + 0.5);
+      return actionPerformed;
+    }
+  },
+  getObjectSizeWithStroke(object) {
+		var stroke = new fabric.Point(
+			object.strokeUniform ? 1 / object.scaleX : 1, 
+			object.strokeUniform ? 1 / object.scaleY : 1
+		).multiply(object.strokeWidth);
+		return new fabric.Point(object.width + stroke.x, object.height + stroke.y);
+	},
     drawing(e) {
       if (this.drawingObject) {
         this.canvas.remove(this.drawingObject)
@@ -426,102 +475,7 @@ export default {
         mouseFrom = this.mouseFrom,
         mouseTo = this.mouseTo
       switch (this.drawType) {
-        case 'arrow': //箭头
-          var x1 = mouseFrom.x,
-            x2 = mouseTo.x,
-            y1 = mouseFrom.y,
-            y2 = mouseTo.y
-          var w = x2 - x1,
-            h = y2 - y1,
-            sh = Math.cos(Math.PI / 4) * 16
-          var sin = h / Math.sqrt(Math.pow(w, 2) + Math.pow(h, 2))
-          var cos = w / Math.sqrt(Math.pow(w, 2) + Math.pow(h, 2))
-          var w1 = (16 * sin) / 4,
-            h1 = (16 * cos) / 4,
-            centerx = sh * cos,
-            centery = sh * sin
-          /**
-           * centerx,centery 表示起始点，终点连线与箭头尖端等边三角形交点相对x，y
-           * w1 ，h1用于确定四个点
-           */
-
-          var path = ' M ' + x1 + ' ' + y1
-          path += ' L ' + (x2 - centerx + w1) + ' ' + (y2 - centery - h1)
-          path +=
-            ' L ' + (x2 - centerx + w1 * 2) + ' ' + (y2 - centery - h1 * 2)
-          path += ' L ' + x2 + ' ' + y2
-          path +=
-            ' L ' + (x2 - centerx - w1 * 2) + ' ' + (y2 - centery + h1 * 2)
-          path += ' L ' + (x2 - centerx - w1) + ' ' + (y2 - centery + h1)
-          path += ' Z'
-          canvasObject = new fabric.Path(path, {
-            stroke: this.color,
-            fill: this.color,
-            strokeWidth: this.drawWidth,
-          })
-          break
-        case 'pentagram': //五角星
-          var x1 = mouseFrom.x,
-            x2 = mouseTo.x,
-            y1 = mouseFrom.y,
-            y2 = mouseTo.y
-          /**
-           * 实现思路  (x1,y1)表示鼠标起始的位置 (x2,y2)表示鼠标抬起的位置
-           * r 表示五边形外圈圆的半径，这里建议自己画个图理解
-           * 正五边形夹角为36度。计算出cos18°，sin18°备用
-           */
-          var w = Math.abs(x2 - x1),
-            h = Math.abs(y2 - y1),
-            r = Math.sqrt(w * w + h * h)
-          var cos18 = Math.cos((18 * Math.PI) / 180)
-          var sin18 = Math.sin((18 * Math.PI) / 180)
-
-          /**
-           * 算出对应五个点的坐标转化为路径
-           */
-          var point1 = [x1, y1 + r]
-          var point2 = [x1 + 2 * r * sin18, y1 + r - 2 * r * cos18]
-          var point3 = [x1 - r * cos18, y1 + r * sin18]
-          var point4 = [x1 + r * cos18, y1 + r * sin18]
-          var point5 = [x1 - 2 * r * sin18, y1 + r - 2 * r * cos18]
-
-          var path = ' M ' + point1[0] + ' ' + point1[1]
-          path += ' L ' + point2[0] + ' ' + point2[1]
-          path += ' L ' + point3[0] + ' ' + point3[1]
-          path += ' L ' + point4[0] + ' ' + point4[1]
-          path += ' L ' + point5[0] + ' ' + point5[1]
-          path += ' Z'
-          canvasObject = new fabric.Path(path, {
-            stroke: this.color,
-            fill: this.color,
-            strokeWidth: this.drawWidth,
-            // angle:180,  //设置旋转角度
-          })
-          break
-        case 'ellipse': //椭圆
-          // 按shift时画正圆，只有在鼠标移动时才执行这个，所以按了shift但是没有拖动鼠标将不会画圆
-          if (e.e.shiftKey) {
-            mouseTo.x - left > mouseTo.y - top
-              ? (mouseTo.y = top + mouseTo.x - left)
-              : (mouseTo.x = left + mouseTo.y - top)
-          }
-          var radius =
-            Math.sqrt(
-              (mouseTo.x - left) * (mouseTo.x - left) +
-                (mouseTo.y - top) * (mouseTo.y - top),
-            ) / 2
-          canvasObject = new fabric.Ellipse({
-            left: (mouseTo.x - left) / 2 + left,
-            top: (mouseTo.y - top) / 2 + top,
-            stroke: this.color,
-            fill: 'rgba(255, 255, 255, 0)',
-            originX: 'center',
-            originY: 'center',
-            rx: Math.abs(left - mouseTo.x) / 2,
-            ry: Math.abs(top - mouseTo.y) / 2,
-            strokeWidth: this.drawWidth,
-          })
-          break
+     
         case 'rectangle': //长方形
           // 按shift时画正方型
           if (e.e.shiftKey) {
@@ -561,21 +515,6 @@ export default {
           })
           //也可以使用fabric.Rect
           break
-        case 'text': //文本框
-          this.textbox = new fabric.Textbox('', {
-            left: mouseFrom.x,
-            top: mouseFrom.y - 10,
-            // width: 150,
-            fontSize: 16,
-            borderColor: this.color,
-            fill: this.color,
-            hasControls: true,
-          })
-          this.canvas.add(this.textbox)
-          this.textbox.enterEditing()
-          this.textbox.hiddenTextarea.focus()
-          break
-
         default:
           break
       }
